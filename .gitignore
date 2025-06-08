@@ -2,6 +2,17 @@
 ddpm/official/*
 !ddpm/official/.gitkeep
 
+data/*
+!data/.gitkeep
+
+ddpm-family/ddpm/pytorch/visualization/*
+!ddpm-family/ddpm/pytorch/visualization/.gitkeep
+
+ddpm-family/ddpm/pytorch/checkpoints/*
+!ddpm-family/ddpm/pytorch/checkpoints/.gitkeep
+
+ddpm-family/ddpm/pytorch/Logs/*
+!ddpm-family/ddpm/pytorch/Logs/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

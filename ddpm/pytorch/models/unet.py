@@ -261,41 +261,72 @@ class UNet(nn.Module):
         # timestep embedding
         temb = None
         if self.use_timestep:
-            # t_emb = timestep_embedding(t, self.ch)
             temb = get_timestep_embedding(t, self.ch)
             temb = self.temb.dense[0](temb)
             temb = nonlinearity(temb)
             temb = self.temb.dense[1](temb)
 
         # downsampling
-        hs = [self.conv_in(x)]
+        skips = []
+        h = self.conv_in(x)
+        skips.append(h)  # 保存初始卷积后的特征图 (例如 32x32)
+
         for i_level in range(self.num_resolutions):
             for i_block in range(self.num_res_blocks):
-                h = self.down[i_level].block[i_block](hs[-1], temb)
+                h = self.down[i_level].block[i_block](h, temb)
                 if len(self.down[i_level].attn) > 0:
+                    # 假设如果注意力模块存在，则其数量与 num_res_blocks 匹配
                     h = self.down[i_level].attn[i_block](h)
-                hs.append(h)
+            # 在当前层级的所有块处理完毕后，h 是该分辨率的特征图
+            skips.append(h)  # 保存每个下采样层级末端的特征图
+                             # (例如 L0: 32x32, L1: 16x16, L2: 8x8, L3: 4x4)
+            
             if i_level != self.num_resolutions - 1:
-                hs.append(self.down[i_level].downsample(hs[-1]))
+                h = self.down[i_level].downsample(h) # 为下一层级准备输入 h
+
+        # 此处 h 是最深层（瓶颈处）的特征图 (例如 4x4)
+        # skips 列表内容: [conv_in_out, L0_out, L1_out, L2_out, L3_out]
 
         # middle
-        h = hs[-1]
+        # 输入到 mid.block_1 的 h 是瓶颈处的特征图
         h = self.mid.block_1(h, temb)
         h = self.mid.attn_1(h)
         h = self.mid.block_2(h, temb)
 
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
+            # 从 skips 列表中获取当前上采样层级对应的跳跃连接
+            # skips.pop() 会依次取出 L3_out, L2_out, L1_out, L0_out
+            if not skips:
+                raise AssertionError("Skip connection list (skips) is empty prematurely.")
+            
+            skip_connection = skips.pop()
+            
+            # 调试信息 (可选, 用于检查形状)
+            # print(f"Upsampling i_level {i_level}: h.shape={h.shape}, skip_connection.shape={skip_connection.shape}")
+
+            h = torch.cat([h, skip_connection], dim=1) # 拼接上采样后的 h 和跳跃连接
+
             for i_block in range(self.num_res_blocks + 1):
-                h = self.up[i_level].block[i_block](
-                    torch.cat([h, hs.pop()], dim=1), temb)
+                h = self.up[i_level].block[i_block](h, temb)
                 if len(self.up[i_level].attn) > 0:
+                    # 假设如果注意力模块存在，则其数量与 num_res_blocks + 1 匹配
                     h = self.up[i_level].attn[i_block](h)
+            
             if i_level != 0:
                 h = self.up[i_level].upsample(h)
 
         # end
+        # skips 列表中此时还剩下一个元素 (conv_in_out)，但不再使用
         h = self.norm_out(h)
         h = nonlinearity(h)
         h = self.conv_out(h)
         return h
+
+if __name__ == "__main__":
+    # Example usage
+    model = UNet()
+    x = torch.randn(1, 3, 32, 32)  # Batch size of 1, 3 channels, 32x32 resolution
+    t = torch.tensor([0])  # Example timestep
+    output = model(x, t)
+    print(output.shape)  # Should be (1, 3, 32, 32)
