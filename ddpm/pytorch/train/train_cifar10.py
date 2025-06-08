@@ -58,8 +58,7 @@ def train_ddpm(dataloader, num_epochs, checkpoint_dir, visual_dir):
         model.train()
         epoch_loss = 0
         
-        progress_bar = tqdm(dataloader, desc=f'Epoch {epoch+1}/{num_epochs}')
-        for batch_idx, (data, _) in enumerate(progress_bar):
+        for batch_idx, (data, _) in enumerate(dataloader):
             data = data.to(device)
             
             # 训练步骤
