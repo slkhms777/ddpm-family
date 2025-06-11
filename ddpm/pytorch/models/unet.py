@@ -256,6 +256,12 @@ class UNet(nn.Module):
         self.conv_out = nn.Conv2d(block_in, out_ch, kernel_size=3, stride=1, padding=1)
         nn.init.zeros_(self.conv_out.weight)
         nn.init.zeros_(self.conv_out.bias)
+        
+        # ResNet块的最后一层也初始化为0
+        for module in self.modules():
+            if isinstance(module, ResnetBlock):
+                nn.init.zeros_(module.conv2.weight)
+                nn.init.zeros_(module.conv2.bias)
 
     def forward(self, x, t):
         # timestep embedding

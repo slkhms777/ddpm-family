@@ -1,11 +1,10 @@
-
 from utils.dataset import get_cifar10_dataloader
 from train.train_cifar10 import train_ddpm
 from utils.visual import draw_loss_curve
 import os
 data_dir = '/mnt/data/gjx/Proj/ddpm-family/data'
-visual_dir = '/mnt/data/gjx/Proj/ddpm-family/pytorch/visualization'
-checkpoint_dir = '/mnt/data/gjx/Proj/ddpm-family/pytorch/checkpoints'
+visual_dir = '/mnt/data/gjx/Proj/ddpm-family/ddpm/pytorch/visualization'
+checkpoint_dir = '/mnt/data/gjx/Proj/ddpm-family/ddpm/pytorch/checkpoints'
 os.makedirs(visual_dir, exist_ok=True)
 os.makedirs(checkpoint_dir, exist_ok=True)  
 os.makedirs(data_dir, exist_ok=True)  # 确保数据目录存在

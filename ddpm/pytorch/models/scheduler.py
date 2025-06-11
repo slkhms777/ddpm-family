@@ -66,13 +66,23 @@ class NoiseScheduler(nn.Module):
         return pred_prev_sample
 
     def get_variance(self, timestep):
-        """计算后验方差 σ_t^2"""
+        """
+        计算后验方差 σ_t^2
+        原论文使用固定方差: β_t 或 β̃_t
+        """
         prev_timestep = timestep - 1
         alpha_prod_t = self.alphas_cumprod[timestep]
         alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else torch.ones_like(alpha_prod_t)
         
-        variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.betas[timestep]
-        return variance
+        # 原论文中提到的两种方差选择
+        # 方案1: 使用 β_t (较小方差)
+        variance_type1 = self.betas[timestep]
+        
+        # 方案2: 使用 β̃_t (较大方差)
+        variance_type2 = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.betas[timestep]
+        
+        # 原论文在CIFAR-10上使用较大方差效果更好
+        return variance_type2
     
     def sample(self, model, shape, device='cpu', num_inference_steps=None):
         """
