@@ -1,6 +1,11 @@
+ddpm/Checkpoints/*
+!ddpm/Checkpoints/.gitkeep
 
-ddpm/official/*
-!ddpm/official/.gitkeep
+ddpm/CheckpointsCFG/*
+!ddpm/CheckpointsCFG/.gitkeep
+
+ddpm/CheckpointsCG/*
+!ddpm/CheckpointsCG/.gitkeep
 
 data/*
 !data/.gitkeep
@@ -211,3 +216,5 @@ cython_debug/
 
 *.png 
 *.pth
+
+*.pt
