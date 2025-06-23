@@ -1,3 +1,4 @@
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -34,6 +35,9 @@ class GaussianDiffusionTrainer(nn.Module):
             'sqrt_one_minus_alphas_bar', torch.sqrt(1. - alphas_bar))
 
     def forward(self, x_0):
+        """
+        Algorithm 1.
+        """
         t = torch.randint(self.T, size=(x_0.shape[0], ), device=x_0.device)
         noise = torch.randn_like(x_0)
         x_t = (
@@ -54,8 +58,10 @@ class GaussianDiffusionSampler(nn.Module):
         alphas = 1. - self.betas
         alphas_bar = torch.cumprod(alphas, dim=0)
         alphas_bar_prev = F.pad(alphas_bar, [1, 0], value=1)[:T]
+
         self.register_buffer('coeff1', torch.sqrt(1. / alphas))
         self.register_buffer('coeff2', self.coeff1 * (1. - alphas) / torch.sqrt(1. - alphas_bar))
+
         self.register_buffer('posterior_var', self.betas * (1. - alphas_bar_prev) / (1. - alphas_bar))
 
     def predict_xt_prev_mean_from_eps(self, x_t, t, eps):
@@ -67,7 +73,7 @@ class GaussianDiffusionSampler(nn.Module):
 
     def p_mean_variance(self, x_t, t):
         # below: only log_variance is used in the KL computations
-        var = torch.cat([self.posterior_var[1], self.betas[1:]])
+        var = torch.cat([self.posterior_var[1:2], self.betas[1:]])
         var = extract(var, t, x_t.shape)
 
         eps = self.model(x_t, t)
@@ -75,17 +81,28 @@ class GaussianDiffusionSampler(nn.Module):
 
         return xt_prev_mean, var
 
-    def forward(self, x_T):
+    def forward(self, x_T, multi_steps=False):
+        """
+        Algorithm 2.
+        """
         x_t = x_T
+        res_list = []
         for time_step in reversed(range(self.T)):
             print(time_step)
             t = x_t.new_ones([x_T.shape[0], ], dtype=torch.long) * time_step
             mean, var= self.p_mean_variance(x_t=x_t, t=t)
+            # no noise when t == 0
             if time_step > 0:
                 noise = torch.randn_like(x_t)
             else:
                 noise = 0
             x_t = mean + torch.sqrt(var) * noise
             assert torch.isnan(x_t).int().sum() == 0, "nan in tensor."
+            if (time_step + 1) % 100 == 0 or time_step == 0:
+                res_list.append(torch.clip(x_t, -1, 1))
         x_0 = x_t
-        return torch.clip(x_0, -1, 1)   
+
+        if multi_steps:
+            return res_list
+        else:
+            return torch.clip(x_0, -1, 1)

@@ -1,7 +1,7 @@
 import os
 from typing import Dict
 import numpy as np
-
+import pandas as pd
 import torch
 import torch.optim as optim
 from tqdm import tqdm
@@ -10,9 +10,10 @@ from torchvision import transforms
 from torchvision.datasets import CIFAR10
 from torchvision.utils import save_image
 
-from ddpm.DiffusionCFG.DiffusionCFG import GaussianDiffusionSampler, GaussianDiffusionTrainer
-from ddpm.DiffusionCFG.ModelCFG import UNet
+from DiffusionCFG.DiffusionCFG import GaussianDiffusionSampler, GaussianDiffusionTrainer
+from DiffusionCFG.ModelCFG import UNet
 from Scheduler import GradualWarmupScheduler
+from utils.visual import generate_samples_by_classes
 
 
 def train(modelConfig: Dict):
@@ -32,7 +33,7 @@ def train(modelConfig: Dict):
                      num_res_blocks=modelConfig["num_res_blocks"], dropout=modelConfig["dropout"]).to(device)
     if modelConfig["training_load_weight"] is not None:
         net_model.load_state_dict(torch.load(os.path.join(
-            modelConfig["save_dir"], modelConfig["training_load_weight"]), map_location=device), strict=False)
+            modelConfig["ckpt_dir"], modelConfig["training_load_weight"]), map_location=device), strict=False)
         print("Model weight load down.")
     optimizer = torch.optim.AdamW(
         net_model.parameters(), lr=modelConfig["lr"], weight_decay=1e-4)
@@ -44,7 +45,7 @@ def train(modelConfig: Dict):
         net_model, modelConfig["beta_1"], modelConfig["beta_T"], modelConfig["T"]).to(device)
 
     losses = []
-
+    lrs = []
     # start training
     for e in range(modelConfig["epoch"]):
         with tqdm(dataloader, dynamic_ncols=True) as tqdmDataLoader:
@@ -70,43 +71,41 @@ def train(modelConfig: Dict):
                     "LR": optimizer.state_dict()['param_groups'][0]["lr"]
                 })
             losses.append(epochLoss / len(dataloader))
+        lrs.append(optimizer.state_dict()['param_groups'][0]["lr"])
         warmUpScheduler.step()
         torch.save(net_model.state_dict(), os.path.join(
-            modelConfig["save_dir"], 'ckpt_' + str(e) + "_.pt"))
-    return losses
+            modelConfig[""], 'ckpt_' + str(e) + "_.pt"))
+
+
+    os.makedirs(modelConfig["visual_dir"], exist_ok=True)
+    # 保存loss为CSV
+    loss_df = pd.DataFrame({
+        'loss': losses
+    })
+    loss_csv_path = os.path.join(modelConfig["visual_dir"], 'ddpmcfg_losses.csv')
+    loss_df.to_csv(loss_csv_path, index=False)
+    print(f"Training losses saved to {loss_csv_path}")
+    # 保存lr为CSV
+    lr_df = pd.DataFrame({
+        'lr': lrs
+    })
+    lr_csv_path = os.path.join(modelConfig["visual_dir"], 'ddpmcfg_lrs.csv')
+    lr_df.to_csv(lr_csv_path, index=False)
+    print(f"Learning rates saved to {lr_csv_path}")
 
 
 def eval(modelConfig: Dict):
-    device = torch.device(modelConfig["device"])
     # load model and evaluate
     with torch.no_grad():
-        step = int(modelConfig["batch_size"] // 10)
-        labelList = []
-        k = 0
-        for i in range(1, modelConfig["batch_size"] + 1):
-            labelList.append(torch.ones(size=[1]).long() * k)
-            if i % step == 0:
-                if k < 10 - 1:
-                    k += 1
-        labels = torch.cat(labelList, dim=0).long().to(device) + 1
-        print("labels: ", labels)
+        device = torch.device(modelConfig["device"])
         model = UNet(T=modelConfig["T"], num_labels=10, ch=modelConfig["channel"], ch_mult=modelConfig["channel_mult"],
                      num_res_blocks=modelConfig["num_res_blocks"], dropout=modelConfig["dropout"]).to(device)
         ckpt = torch.load(os.path.join(
-            modelConfig["save_dir"], modelConfig["test_load_weight"]), map_location=device)
+            modelConfig["ckpt_dir"], modelConfig["test_load_weight"]), map_location=device)
         model.load_state_dict(ckpt)
         print("model load weight done.")
-        model.eval()
         sampler = GaussianDiffusionSampler(
             model, modelConfig["beta_1"], modelConfig["beta_T"], modelConfig["T"], w=modelConfig["w"]).to(device)
-        # Sampled from standard normal distribution
-        noisyImage = torch.randn(
-            size=[modelConfig["batch_size"], 3, modelConfig["img_size"], modelConfig["img_size"]], device=device)
-        saveNoisy = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
-        save_image(saveNoisy, os.path.join(
-            modelConfig["sampled_dir"],  modelConfig["sampledNoisyImgName"]), nrow=modelConfig["nrow"])
-        sampledImgs = sampler(noisyImage, labels)
-        sampledImgs = sampledImgs * 0.5 + 0.5  # [0 ~ 1]
-        print(sampledImgs)
-        save_image(sampledImgs, os.path.join(
-            modelConfig["sampled_dir"],  modelConfig["sampledImgName"]), nrow=modelConfig["nrow"])
+        model.eval()
+        generate_samples_by_classes(sampler, device=device, modelConfig=modelConfig)
+

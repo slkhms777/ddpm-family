@@ -68,7 +68,7 @@ class GaussianDiffusionSampler(nn.Module):
 
     def p_mean_variance(self, x_t, t, labels):
         # below: only log_variance is used in the KL computations
-        var = torch.cat([self.posterior_var[1], self.betas[1:]])
+        var = torch.cat([self.posterior_var[1:2], self.betas[1:]])
         var = extract(var, t, x_t.shape)
 
         # the first forward pass
@@ -80,8 +80,9 @@ class GaussianDiffusionSampler(nn.Module):
         xt_prev_mean = self.predict_xt_prev_mean_from_eps(x_t, t, eps=eps)
         return xt_prev_mean, var
 
-    def forward(self, x_T, labels):
+    def forward(self, x_T, labels, multi_steps=False):
         x_t = x_T
+        res_list = []
         for time_step in reversed(range(self.T)):
             print(time_step)
             t = x_t.new_ones([x_T.shape[0], ], dtype=torch.long) * time_step
@@ -92,5 +93,10 @@ class GaussianDiffusionSampler(nn.Module):
                 noise = 0
             x_t = mean + torch.sqrt(var) * noise
             assert torch.isnan(x_t).int().sum() == 0, "nan in tensor."
+            if (time_step + 1) % 100 == 0 or time_step == 0:
+                res_list.append(torch.clip(x_t, -1, 1))
         x_0 = x_t
-        return torch.clip(x_0, -1, 1)   
+        if multi_steps:
+            return res_list
+        else:
+            return torch.clip(x_0, -1, 1)   

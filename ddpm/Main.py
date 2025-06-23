@@ -1,11 +1,14 @@
 from Diffusion.Train import train, eval
-from utils.visual import showLoss
+
 
 def main(model_config = None):
     modelConfig = {
-        "state": "train",
-        "epoch": 200,
-        "batch_size": 80,
+        "state": "eval",
+
+        "epoch": 10,
+        "batch_size": 64,
+        "nrow": 8,
+
         "T": 1000,
         "channel": 128,
         "channel_mult": [1, 2, 3, 4],
@@ -16,17 +19,24 @@ def main(model_config = None):
         "multiplier": 2.,
         "beta_1": 1e-4,
         "beta_T": 0.02,
+
         "img_size": 32,
         "grad_clip": 1.,
+
         "device": "cuda:0", 
+
         "training_load_weight": None,
-        "save_weight_dir": "./Checkpoints/",
         "test_load_weight": "ckpt_199_.pt",
-        "sampled_dir": "./SampledImgs/",
-        "sampledNoisyImgName": "NoisyNoGuidenceImgs.png",
-        "sampledImgName": "SampledNoGuidenceImgs.png",
+
+        "ckpt_dir": "./Checkpoints/",
+        "sampled_dir": "./SampledImgs/ddpm",
+        "visual_dir": "./Visualization/ddpm",
+        "tmp_dir": "./tmp_fid/ddpm",
+        "sampledNoisyImgName": "NoisyImgs",
+        "sampledImgName": "SampledImgs",
         "nrow": 8
         }
+    
     if model_config is not None:
         modelConfig = model_config
     if modelConfig["state"] == "train":

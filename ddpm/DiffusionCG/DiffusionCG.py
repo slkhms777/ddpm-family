@@ -33,12 +33,12 @@ class GaussianDiffusionTrainer(nn.Module):
         self.register_buffer(
             'sqrt_one_minus_alphas_bar', torch.sqrt(1. - alphas_bar))
 
-    def forward(self, x_0):
+    def forward(self, x_0, labels):
         t = torch.randint(self.T, size=(x_0.shape[0], ), device=x_0.device)
         noise = torch.randn_like(x_0)
-        x_t = extract(self.sqrt_alphas_bar, t, x_0.shape) * x_0 + \
-              extract(self.sqrt_one_minus_alphas_bar, t, x_0.shape) * noise
-        loss = F.mse_loss(self.model(x_t, t), noise, reduction='none')
+        x_t =   extract(self.sqrt_alphas_bar, t, x_0.shape) * x_0 + \
+                extract(self.sqrt_one_minus_alphas_bar, t, x_0.shape) * noise
+        loss = F.mse_loss(self.model(x_t, t, labels), noise, reduction='none')
         return loss
 
 
@@ -68,7 +68,7 @@ class GaussianDiffusionSampler(nn.Module):
 
     def p_mean_variance(self, x_t, t, labels):
         # 方差计算保持不变
-        var = torch.cat([self.posterior_var[1], self.betas[1:]])
+        var = torch.cat([self.posterior_var[1:2], self.betas[1:]])
         var = extract(var, t, x_t.shape)
         
         # 启用梯度计算（分类器需要梯度）
@@ -90,7 +90,7 @@ class GaussianDiffusionSampler(nn.Module):
             )[0]
         
         # 用扩散模型预测噪声（无条件）
-        eps = self.model(x_t, t)
+        eps = self.model(x_t, t, labels)
         
         # Classifier Guidance
         # 公式：ε̃ = ε - √(1-ᾱₜ) * s * ∇_x log p(y|x_t)
@@ -101,12 +101,13 @@ class GaussianDiffusionSampler(nn.Module):
         xt_prev_mean = self.predict_xt_prev_mean_from_eps(x_t, t, eps=eps_guided)
         return xt_prev_mean, var
 
-    def forward(self, x_T):
+    def forward(self, x_T, labels):
         x_t = x_T
+        self.classifier.eval()
         for time_step in reversed(range(self.T)):
             print(time_step)
             t = x_t.new_ones([x_T.shape[0], ], dtype=torch.long) * time_step
-            mean, var= self.p_mean_variance(x_t=x_t, t=t)
+            mean, var= self.p_mean_variance(x_t=x_t, t=t, labels=labels)
             if time_step > 0:
                 noise = torch.randn_like(x_t)
             else:

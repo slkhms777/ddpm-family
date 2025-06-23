@@ -1,9 +1,8 @@
 from DiffusionCFG.TrainCFG import train, eval
-from utils.visual import showLoss
 
 def main(model_config=None):
     modelConfig = {
-        "state": "train", # or eval
+        "state": "eval", # or eval
         "epoch": 70,
         "batch_size": 80,
         "T": 500,
@@ -17,22 +16,23 @@ def main(model_config=None):
         "beta_T": 0.028,
         "img_size": 32,
         "grad_clip": 1.,
-        "device": "cuda:1",
+        "device": "cuda:2",
         "w": 1.8,
-        "save_dir": "./CheckpointsCFG/",
         "training_load_weight": None,
         "test_load_weight": "ckpt_63_.pt",
-        "sampled_dir": "./SampledImgs/",
-        "visual_dir": "./Visualization/ddpmfg",
-        "sampledNoisyImgName": "NoisyGuidenceImgs.png",
-        "sampledImgName": "SampledGuidenceImgs.png",
+
+        "ckpt_dir": "./CheckpointsCFG/",
+        "sampled_dir": "./SampledImgs/ddpmcfg",
+        "visual_dir": "./Visualization/ddpmcfg",
+        "tmp_dir": "./tmp_fid/ddpmcfg",
+        "sampledNoisyImgName": "NoisyImgs",
+        "sampledImgName": "SampledImgs",
         "nrow": 8
     }
     if model_config is not None:
         modelConfig = model_config
     if modelConfig["state"] == "train":
-        losses = train(modelConfig)
-        showLoss(losses, visual_dir=modelConfig["visual_dir"])
+        train(modelConfig)
     else:
         eval(modelConfig)
 

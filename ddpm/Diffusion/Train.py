@@ -1,7 +1,7 @@
 
 import os
 from typing import Dict
-
+import pandas as pd
 import torch
 import torch.optim as optim
 from tqdm import tqdm
@@ -13,8 +13,8 @@ from torchvision.utils import save_image
 from Diffusion import GaussianDiffusionSampler, GaussianDiffusionTrainer
 from Diffusion.Model import UNet
 from Scheduler import GradualWarmupScheduler
-
-
+from utils.visual import show_Loss_and_lr, generate_samples
+from utils.FIDIS import FID_and_IS
 def train(modelConfig: Dict):
     device = torch.device(modelConfig["device"])
     # dataset
@@ -33,7 +33,7 @@ def train(modelConfig: Dict):
                      num_res_blocks=modelConfig["num_res_blocks"], dropout=modelConfig["dropout"]).to(device)
     if modelConfig["training_load_weight"] is not None:
         net_model.load_state_dict(torch.load(os.path.join(
-            modelConfig["save_weight_dir"], modelConfig["training_load_weight"]), map_location=device))
+            modelConfig["ckpt_dir"], modelConfig["training_load_weight"]), map_location=device))
     optimizer = torch.optim.AdamW(
         net_model.parameters(), lr=modelConfig["lr"], weight_decay=1e-4)
     cosineScheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -44,7 +44,8 @@ def train(modelConfig: Dict):
         net_model, modelConfig["beta_1"], modelConfig["beta_T"], modelConfig["T"]).to(device)
 
     losses = []
-
+    lrs = []
+    
     # start training
     for e in range(modelConfig["epoch"]):
         with tqdm(dataloader, dynamic_ncols=True) as tqdmDataLoader:
@@ -66,33 +67,75 @@ def train(modelConfig: Dict):
                     "LR": optimizer.state_dict()['param_groups'][0]["lr"]
                 })
             losses.append(epochLoss / len(dataloader))
+        lrs.append(optimizer.state_dict()['param_groups'][0]["lr"])
         warmUpScheduler.step()
         torch.save(net_model.state_dict(), os.path.join(
-            modelConfig["save_weight_dir"], 'ckpt_' + str(e) + "_.pt"))
-
-    return losses
+            modelConfig["ckpt_dir"], 'ckpt_' + str(e) + "_.pt"))
+        
+    os.makedirs(modelConfig["visual_dir"], exist_ok=True)
+    # 保存loss为CSV
+    loss_df = pd.DataFrame({
+        'loss': losses
+    })
+    loss_csv_path = os.path.join(modelConfig["visual_dir"], 'ddpm_losses.csv')
+    loss_df.to_csv(loss_csv_path, index=False)
+    print(f"Training losses saved to {loss_csv_path}")
+    # 保存lr为CSV
+    lr_df = pd.DataFrame({
+        'lr': lrs
+    })
+    lr_csv_path = os.path.join(modelConfig["visual_dir"], 'ddpm_lrs.csv')
+    lr_df.to_csv(lr_csv_path, index=False)
+    print(f"Learning rates saved to {lr_csv_path}")
 
 def eval(modelConfig: Dict):
-    # load model and evaluate
     with torch.no_grad():
+        # 采样最终图片以及不同步长的图片
         device = torch.device(modelConfig["device"])
         model = UNet(T=modelConfig["T"], ch=modelConfig["channel"], ch_mult=modelConfig["channel_mult"], attn=modelConfig["attn"],
-                     num_res_blocks=modelConfig["num_res_blocks"], dropout=0.)
+                        num_res_blocks=modelConfig["num_res_blocks"], dropout=0.)
         ckpt = torch.load(os.path.join(
-            modelConfig["save_weight_dir"], modelConfig["test_load_weight"]), map_location=device)
+            modelConfig["ckpt_dir"], modelConfig["test_load_weight"]), map_location=device)
         model.load_state_dict(ckpt)
         print("model load weight done.")
         model.eval()
+    
         sampler = GaussianDiffusionSampler(
             model, modelConfig["beta_1"], modelConfig["beta_T"], modelConfig["T"]).to(device)
+        # generate_samples(sampler, device=device, modelConfig=modelConfig)
+
+        # 绘制loss曲线，lr曲线，以及累积时间
+        show_Loss_and_lr(
+            losses=pd.read_csv(os.path.join(modelConfig["visual_dir"], 'ddpm_losses.csv')),
+            lrs=pd.read_csv(os.path.join(modelConfig["visual_dir"], 'ddpm_lrs.csv')),
+            visual_dir=modelConfig["visual_dir"],
+            model_name="ddpm"
+        )
+
+
+        # 计算FID和IS
+        # 在eval函数中使用
+        calculator = FID_and_IS(device="cuda", real_batch_size=100, tmp_dir=modelConfig["tmp_dir"], is_splits=10)
+
+        # 生成假图片
+        calculator.prepare_fake_images(
+            sampler=sampler,
+            num_images=100,
+            batch_size=100,
+            img_size=32,
+            num_classes=-1,
+            device=device
+        )
+
+        # 同时计算FID和IS
+        results = calculator.compute_both()
+        print(f"FID: {results['fid']:.4f}")
+        print(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}")
         
-        # Sampled from standard normal distribution
-        noisyImage = torch.randn(
-            size=[modelConfig["batch_size"], 3, 32, 32], device=device)
-        saveNoisy = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
-        save_image(saveNoisy, os.path.join(
-            modelConfig["sampled_dir"], modelConfig["sampledNoisyImgName"]), nrow=modelConfig["nrow"])
-        sampledImgs = sampler(noisyImage)
-        sampledImgs = sampledImgs * 0.5 + 0.5
-        save_image(sampledImgs, os.path.join(
-            modelConfig["sampled_dir"],  modelConfig["sampledImgName"]), nrow=modelConfig["nrow"])
+        with open(os.path.join(modelConfig["visual_dir"], 'fid_is_results.txt'), 'w') as f:
+            f.write(f"FID: {results['fid']:.4f}\n")
+            f.write(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}\n")
+
+    # 不同样本对比
+
+    
