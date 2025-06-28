@@ -115,15 +115,14 @@ def eval(modelConfig: Dict):
 
         # 计算FID和IS
         # 在eval函数中使用
-        calculator = FID_and_IS(device="cuda", real_batch_size=100, tmp_dir=modelConfig["tmp_dir"], is_splits=10)
+        calculator = FID_and_IS(device="cuda", real_batch_size=10000, tmp_dir=modelConfig["tmp_dir"], is_splits=10)
 
         # 生成假图片
         calculator.prepare_fake_images(
             sampler=sampler,
-            num_images=100,
+            num_images=10000,
             batch_size=100,
             img_size=32,
-            num_classes=-1,
             device=device
         )
 
@@ -132,6 +131,7 @@ def eval(modelConfig: Dict):
         print(f"FID: {results['fid']:.4f}")
         print(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}")
         
+        os.makedirs(modelConfig["visual_dir"], exist_ok=True)
         with open(os.path.join(modelConfig["visual_dir"], 'fid_is_results.txt'), 'w') as f:
             f.write(f"FID: {results['fid']:.4f}\n")
             f.write(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}\n")

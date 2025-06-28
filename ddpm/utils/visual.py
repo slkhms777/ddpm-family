@@ -46,6 +46,7 @@ def generate_samples(sampler, device='cpu', modelConfig=None):
         # 采样图片
         noisyImage = torch.randn(size=[modelConfig["batch_size"], 3, 32, 32], device=device)
         saveNoisy = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
+        os.makedirs(modelConfig["sampled_dir"], exist_ok=True)
         save_image(saveNoisy, os.path.join(
             modelConfig["sampled_dir"], modelConfig["sampledNoisyImgName"]+".png"), nrow=modelConfig["nrow"])
         
@@ -81,6 +82,7 @@ def generate_samples_by_classes(sampler, device='cpu', modelConfig=None):
         # 采样图片
         noisyImage = torch.randn(size=[modelConfig["batch_size"], 3, 32, 32], device=device)
         saveNoisy = torch.clamp(noisyImage * 0.5 + 0.5, 0, 1)
+        os.makedirs(modelConfig["sampled_dir"], exist_ok=True)
         save_image(saveNoisy, os.path.join(
             modelConfig["sampled_dir"], modelConfig["sampledNoisyImgName"]+".png"), nrow=modelConfig["nrow"])
         

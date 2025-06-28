@@ -14,7 +14,8 @@ from DiffusionCFG.DiffusionCFG import GaussianDiffusionSampler, GaussianDiffusio
 from DiffusionCFG.ModelCFG import UNet
 from Scheduler import GradualWarmupScheduler
 from utils.visual import generate_samples_by_classes
-
+from utils.visual import show_Loss_and_lr
+from utils.FIDIS import FID_and_IS
 
 def train(modelConfig: Dict):
     device = torch.device(modelConfig["device"])
@@ -74,7 +75,7 @@ def train(modelConfig: Dict):
         lrs.append(optimizer.state_dict()['param_groups'][0]["lr"])
         warmUpScheduler.step()
         torch.save(net_model.state_dict(), os.path.join(
-            modelConfig[""], 'ckpt_' + str(e) + "_.pt"))
+            modelConfig["ckpt_dir"], 'ckpt_' + str(e) + "_.pt"))
 
 
     os.makedirs(modelConfig["visual_dir"], exist_ok=True)
@@ -109,3 +110,40 @@ def eval(modelConfig: Dict):
         model.eval()
         generate_samples_by_classes(sampler, device=device, modelConfig=modelConfig)
 
+
+
+        # 绘制loss曲线，lr曲线，以及累积时间
+        show_Loss_and_lr(
+            losses=pd.read_csv(os.path.join(modelConfig["visual_dir"], 'ddpmcfg_losses.csv')),
+            lrs=pd.read_csv(os.path.join(modelConfig["visual_dir"], 'ddpmcfg_lrs.csv')),
+            visual_dir=modelConfig["visual_dir"],
+            model_name="ddpmcfg"
+        )
+
+
+        # 计算FID和IS
+        # 在eval函数中使用
+        calculator = FID_and_IS(device="cuda", real_batch_size=10000, tmp_dir=modelConfig["tmp_dir"], is_splits=10, con_model=True)
+
+        # 生成假图片
+        calculator.prepare_fake_images(
+            sampler=sampler,
+            num_images=10000,
+            batch_size=100,
+            img_size=32,
+            device=device
+        )
+
+        # 同时计算FID和IS
+        results = calculator.compute_both()
+        print(f"FID: {results['fid']:.4f}")
+        print(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}")
+        
+        os.makedirs(modelConfig["visual_dir"], exist_ok=True)
+        with open(os.path.join(modelConfig["visual_dir"], 'fid_is_results.txt'), 'w') as f:
+            f.write(f"FID: {results['fid']:.4f}\n")
+            f.write(f"IS: {results['is_mean']:.4f} ± {results['is_std']:.4f}\n")
+
+    # 不同样本对比
+
+    

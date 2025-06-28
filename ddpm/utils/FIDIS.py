@@ -21,7 +21,7 @@ class FID_and_IS:
     _shared_real_dir = "../data/realimg"
     _shared_real_prepared = False
     
-    def __init__(self, device, model_name=None, real_batch_size=100, tmp_dir="./tmp_fid_is", is_splits=10):
+    def __init__(self, device, model_name=None, real_batch_size=100, tmp_dir="./tmp_fid_is", is_splits=10, con_model=False):
         """
         初始化FID和IS计算器
         
@@ -37,12 +37,15 @@ class FID_and_IS:
             临时文件目录（存放fake图片）
         is_splits : int
             计算IS时的分割数量，用于计算标准差
+        con_model : bool
+            是否为条件模型，如果为True则生成随机标签
         """
         self.device = device
         self.model_name = model_name or "default"
         self.real_batch_size = real_batch_size
         self.tmp_dir = tmp_dir
         self.is_splits = is_splits
+        self.con_model = con_model  # 新增条件模型标志
         
         # 统一的real图片目录
         self.real_dir = FID_and_IS._shared_real_dir
@@ -144,64 +147,69 @@ class FID_and_IS:
             img_path = os.path.join(directory, f"{prefix}_{start_idx + i:05d}.png")
             save_image(img, img_path)
 
-    def prepare_fake_images(self, sampler, num_images=10000, batch_size=100, img_size=32, num_classes=-1, device=None):
+    def prepare_fake_images(self, sampler, num_images=10000, batch_size=100, img_size=32, device=None):
         """
         使用采样器生成fake图片
-        
-        Parameters:
-        -----------
-        sampler : torch.nn.Module
-            训练好的采样器
-        num_images : int
-            生成的图片数量
-        batch_size : int
-            每批生成的图片数量
-        img_size : int
-            图片尺寸
-        num_classes : int
-            类别数（-1表示无条件生成）
-        device : str, optional
-            设备，默认使用初始化时的设备
+        如果目录下已有足够的fake图片，则不再生成，避免重复生成。
         """
-        # 清空fake图片目录
+        # 检查现有fake图片数量
+        existing_count = 0
         if os.path.exists(self.fake_dir):
+            existing_files = [f for f in os.listdir(self.fake_dir) if f.endswith('.png')]
+            existing_count = len(existing_files)
+        else:
+            os.makedirs(self.fake_dir, exist_ok=True)
+
+        if existing_count >= num_images:
+            print(f"Found {existing_count} fake images in {self.fake_dir}, skip generation.")
+            return
+
+        # 若不足，删除旧的，重新生成
+        if existing_count > 0:
+            print(f"Existing fake images ({existing_count}) less than required ({num_images}), regenerating all.")
             shutil.rmtree(self.fake_dir)
-        os.makedirs(self.fake_dir, exist_ok=True)
-        
+            os.makedirs(self.fake_dir, exist_ok=True)
+
         if device is None:
             device = self.device
-        
+
         print(f"Generating {num_images} fake images for model '{self.model_name}' to {self.fake_dir}...")
-        
+        if self.con_model:
+            print("Using conditional model with random labels (1-10)")
+        else:
+            print("Using unconditional model")
+
         sampler.eval()
         count = 0
-        
+
         with torch.no_grad():
             while count < num_images:
                 n = min(batch_size, num_images - count)
                 noise = torch.randn(n, 3, img_size, img_size, device=device)
-                
+
                 # 生成图片
-                if num_classes != -1:
-                    labels = torch.randint(0, num_classes, (n,), device=device)
+                if self.con_model:
+                    # 条件模型：随机生成1-10的标签
+                    labels = torch.randint(1, 11, (n,), device=device)
                     fake_imgs = sampler(noise, labels)
                 else:
+                    # 无条件模型
                     fake_imgs = sampler(noise)
 
                 # 归一化到[0,1]
                 if fake_imgs.min() < 0 or fake_imgs.max() > 1:
                     fake_imgs = (fake_imgs + 1) / 2
-                
+
                 # 保存图片
                 start_idx = count
                 self._save_images_with_offset(
                     fake_imgs.cpu(), self.fake_dir, prefix="fake", start_idx=start_idx
                 )
                 count += n
-                
+
                 if count % 1000 == 0:
                     print(f"Generated {count}/{num_images} fake images")
-        
+
         print(f"Successfully generated {count} fake images")
 
     def compute_fid(self):

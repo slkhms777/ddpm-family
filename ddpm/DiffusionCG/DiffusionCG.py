@@ -52,12 +52,13 @@ class GaussianDiffusionSampler(nn.Module):
         self.s = s
 
         self.register_buffer('betas', torch.linspace(beta_1, beta_T, T).double())
-        self.alphas = 1. - self.betas
-        self.alphas_bar = torch.cumprod(self.alphas, dim=0)
-        self.alphas_bar_prev = F.pad(self.alphas_bar, [1, 0], value=1)[:T]
+        self.register_buffer('alphas', 1. - self.betas)
+        self.register_buffer('alphas_bar', torch.cumprod(self.alphas, dim=0))
+        self.register_buffer('alphas_bar_prev', F.pad(self.alphas_bar, [1, 0], value=1)[:T])
         self.register_buffer('coeff1', torch.sqrt(1. / self.alphas))
         self.register_buffer('coeff2', self.coeff1 * (1. - self.alphas) / torch.sqrt(1. - self.alphas_bar))
         self.register_buffer('posterior_var', self.betas * (1. - self.alphas_bar_prev) / (1. - self.alphas_bar))
+
 
     def predict_xt_prev_mean_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
@@ -76,11 +77,11 @@ class GaussianDiffusionSampler(nn.Module):
             x_t_grad = x_t.detach().requires_grad_(True)
             
             # 用分类器计算梯度引导
-            classifier_output = self.classifier(x_t_grad, t)
+            classifier_output = self.classifier(x_t_grad)
             classifier_log_probs = F.log_softmax(classifier_output, dim=-1)
             
             # 选择对应标签的log概率
-            selected_log_probs = classifier_log_probs[range(len(labels)), labels]
+            selected_log_probs = classifier_log_probs[range(len(labels)), labels - 1]
             
             # 计算梯度 ∇_x log p(y|x_t)
             classifier_grad = torch.autograd.grad(
@@ -101,9 +102,26 @@ class GaussianDiffusionSampler(nn.Module):
         xt_prev_mean = self.predict_xt_prev_mean_from_eps(x_t, t, eps=eps_guided)
         return xt_prev_mean, var
 
-    def forward(self, x_T, labels):
+    # def forward(self, x_T, labels, multi_steps=False):
+    #     x_t = x_T
+    #     self.classifier.eval()
+    #     for time_step in reversed(range(self.T)):
+    #         print(time_step)
+    #         t = x_t.new_ones([x_T.shape[0], ], dtype=torch.long) * time_step
+    #         mean, var= self.p_mean_variance(x_t=x_t, t=t, labels=labels)
+    #         if time_step > 0:
+    #             noise = torch.randn_like(x_t)
+    #         else:
+    #             noise = 0
+    #         x_t = mean + torch.sqrt(var) * noise
+    #         assert torch.isnan(x_t).int().sum() == 0, "nan in tensor."
+    #     x_0 = x_t
+    #     return torch.clip(x_0, -1, 1)   
+
+
+    def forward(self, x_T, labels, multi_steps=False):
         x_t = x_T
-        self.classifier.eval()
+        res_list = []
         for time_step in reversed(range(self.T)):
             print(time_step)
             t = x_t.new_ones([x_T.shape[0], ], dtype=torch.long) * time_step
@@ -114,5 +132,10 @@ class GaussianDiffusionSampler(nn.Module):
                 noise = 0
             x_t = mean + torch.sqrt(var) * noise
             assert torch.isnan(x_t).int().sum() == 0, "nan in tensor."
+            if (time_step + 1) % 100 == 0 or time_step == 0:
+                res_list.append(torch.clip(x_t, -1, 1))
         x_0 = x_t
-        return torch.clip(x_0, -1, 1)   
+        if multi_steps:
+            return res_list
+        else:
+            return torch.clip(x_0, -1, 1)  
