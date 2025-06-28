@@ -127,13 +127,13 @@ def eval(modelConfig: Dict):
 
         # 计算FID和IS
         # 在eval函数中使用
-        calculator = FID_and_IS(device="cuda", real_batch_size=10000, tmp_dir=modelConfig["tmp_dir"], is_splits=10, con_model=True)
+        calculator = FID_and_IS(device="cuda", tmp_dir=modelConfig["tmp_dir"], is_splits=10, con_model=True)
 
         # 生成假图片
         calculator.prepare_fake_images(
             sampler=sampler,
             num_images=10000,
-            batch_size=100,
+            batch_size=50,
             img_size=32,
             device=device
         )
